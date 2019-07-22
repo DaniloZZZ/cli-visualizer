@@ -83,14 +83,24 @@ void vis::LorenzTransformer::execute_stereo(pcm_stereo_sample *buffer,
 
     auto average_left = 0.0;
     auto average_right = 0.0;
-    for (auto i = 0u; i < samples; ++i)
+    auto bass_int = 0.0;
+    for (auto i = 0u; i < samples/2; ++i)
     {
         average_left += std::abs(buffer[i].l);
+        //average_right += std::abs(buffer[i].r);
+    }
+    for (auto i = samples/2; i < samples; ++i)
+    {
+        //average_left += std::abs(buffer[i].l);
         average_right += std::abs(buffer[i].r);
     }
+    for (auto i = 0u; i < samples/4; ++i)
+    {
+        bass_int += std::abs(buffer[i].r);
+    }
 
-    average_left = average_left / samples * 2.0;
-    average_right = average_right / samples;
+    average_left = average_left / samples * 4.0;
+    average_right = average_right / samples * 2.0;
 
     const auto rotation_interval_left =
         (average_left * (m_settings->get_fps() / 65536.0));
@@ -106,7 +116,7 @@ void vis::LorenzTransformer::execute_stereo(pcm_stereo_sample *buffer,
     // just a disc and after 64.4 the size increases dramatically.
     // The equation was generated using linear curve fitting
     // http://www.wolframalpha.com/input/?i=quadratic+fit+%7B10%2C1%7D%2C%7B18000%2C32%7D%2C%7B45000%2C48%7D%2C%7B65536%2C64.4%7D
-    const auto lorenz_b = k_lorenz_b1 + k_lorenz_b2 * average;
+    const auto lorenz_b =  k_lorenz_b1 + k_lorenz_b2 * average;
 
     // Calculate the center of the lorenz. Described here under the heading
     // Equilibria http://www.me.rochester.edu/courses/ME406/webexamp5/loreq.pdf
@@ -121,10 +131,14 @@ void vis::LorenzTransformer::execute_stereo(pcm_stereo_sample *buffer,
     // the screen.
     // Only consider max y coordinate since both max z and max x will be much
     // smaller than the max y.
-    const auto scaling_multiplier =
+    auto scaling_multiplier =
         1.25 * (half_height) /
         std::sqrt((k_lorenz_c * lorenz_b * lorenz_b) -
                   (std::pow(z_center - lorenz_b, 2) / std::pow(lorenz_b, 2)));
+    bass_int /= 1000000L;
+
+    // Make the attractor scale to base
+    scaling_multiplier *=(1+ 0.45 * bass_int) * bass_int/(1+bass_int);
 
     // Calculate the horizontal and vertical rotation angles. This is dependent
     // on the volume of the left and right channels.
@@ -197,7 +211,7 @@ void vis::LorenzTransformer::execute_stereo(pcm_stereo_sample *buffer,
                     z * deg_multiplier_cos_y * deg_multiplier_sin_x;
 
         x = xRxy * scaling_multiplier;
-        y = yRxy * scaling_multiplier;
+        y = yRxy * scaling_multiplier ;//+ z*scaling_multiplier;
 
         // Throw out any points outside the window
         if (y > (half_height * -1) && y < half_height &&
